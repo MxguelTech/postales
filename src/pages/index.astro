@@ -1,5 +1,7 @@
 ---
 import { Client } from '@notionhq/client';
+import fs from 'node:fs';
+import path from 'node:path';
 
 const notion = new Client({ auth: import.meta.env.NOTION_TOKEN });
 
@@ -21,15 +23,22 @@ const dias = response.results.map((page) => ({
   slug: page.properties.Slug.url ?? '',
 }));
 
-const numFotos = 2;
+const EXTENSIONES_VALIDAS = ['.jpg', '.jpeg', '.png', '.webp'];
 
-const diasConFotos = dias.map((d) => {
-  const fotos = Array.from(
-    { length: numFotos },
-    (_, i) => `/fotos/tenerife/dia${d.dia}/${i + 1}.jpg`
-  );
-  return { ...d, fotos };
-});
+function listarFotos(viaje, numDia) {
+  const carpeta = path.join(process.cwd(), 'public', 'fotos', 'tenerife', `dia${numDia}`);
+  if (!fs.existsSync(carpeta)) return [];
+  return fs
+    .readdirSync(carpeta)
+    .filter((archivo) => EXTENSIONES_VALIDAS.includes(path.extname(archivo).toLowerCase()))
+    .sort()
+    .map((archivo) => `/fotos/tenerife/dia${numDia}/${archivo}`);
+}
+
+const diasConFotos = dias.map((d) => ({
+  ...d,
+  fotos: listarFotos(d.viaje, d.dia),
+}));
 
 const nombreViaje = diasConFotos[0]?.viaje ?? '';
 ---
@@ -46,6 +55,7 @@ const nombreViaje = diasConFotos[0]?.viaje ?? '';
       margin: 0 auto;
       padding: 24px 16px;
       background: #fafafa;
+      user-select: none;
     }
     h1 { font-size: 22px; margin: 0 0 4px; }
     .subtitulo { font-size: 13px; color: #777; margin: 0 0 24px; }
@@ -71,6 +81,7 @@ const nombreViaje = diasConFotos[0]?.viaje ?? '';
       border-radius: 50%;
       border: 2px solid #999;
       background: white;
+      transition: background 0.2s, border-color 0.2s;
     }
     .punto-wrap.activo .punto {
       background: #2563eb;
@@ -79,6 +90,10 @@ const nombreViaje = diasConFotos[0]?.viaje ?? '';
     .etiqueta { font-size: 11px; color: #777; }
     .punto-wrap.activo .etiqueta { color: #2563eb; font-weight: 600; }
     .linea { flex: 1; height: 1.5px; background: #ccc; margin-bottom: 20px; }
+    .panel-contenedor {
+      overflow: hidden;
+      touch-action: pan-y;
+    }
     .panel {
       background: white;
       border-radius: 12px;
@@ -87,6 +102,7 @@ const nombreViaje = diasConFotos[0]?.viaje ?? '';
     }
     .panel h2 { font-size: 16px; margin: 0 0 6px; }
     .panel p { font-size: 13px; color: #555; line-height: 1.6; margin: 0 0 12px; }
+    .sin-fotos { font-size: 12px; color: #aaa; }
     .fotos {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
@@ -108,7 +124,7 @@ const nombreViaje = diasConFotos[0]?.viaje ?? '';
   <div class="timeline">
     {diasConFotos.map((d, i) => (
       <>
-        <button class="punto-wrap" class:list={[{ activo: i === 0 }]} data-dia={d.dia}>
+        <button class="punto-wrap" class:list={[{ activo: i === 0 }]} data-index={i}>
           <span class="punto"></span>
           <span class="etiqueta">Dia {d.dia}</span>
         </button>
@@ -117,31 +133,65 @@ const nombreViaje = diasConFotos[0]?.viaje ?? '';
     ))}
   </div>
 
-  {diasConFotos.map((d, i) => (
-    <div class="panel" data-panel={d.dia} style={i === 0 ? '' : 'display:none'}>
-      <h2>{d.nombre}</h2>
-      <p>{d.texto}</p>
-      <div class="fotos">
-        {d.fotos.map((f) => <img src={f} loading="lazy" />)}
+  <div class="panel-contenedor" id="panel-contenedor">
+    {diasConFotos.map((d, i) => (
+      <div class="panel" data-index={i} style={i === 0 ? '' : 'display:none'}>
+        <h2>{d.nombre}</h2>
+        <p>{d.texto}</p>
+        {d.fotos.length > 0 ? (
+          <div class="fotos">
+            {d.fotos.map((f) => <img src={f} loading="lazy" />)}
+          </div>
+        ) : (
+          <p class="sin-fotos">Sin fotos todavia</p>
+        )}
       </div>
-    </div>
-  ))}
+    ))}
+  </div>
 
   <script>
-    const botones = document.querySelectorAll('.punto-wrap');
-    const paneles = document.querySelectorAll('.panel');
+    const botones = Array.from(document.querySelectorAll('.punto-wrap'));
+    const paneles = Array.from(document.querySelectorAll('.panel'));
+    const contenedor = document.getElementById('panel-contenedor');
+    let indiceActual = 0;
+
+    function mostrarDia(indice) {
+      if (indice < 0 || indice >= paneles.length) return;
+      indiceActual = indice;
+
+      botones.forEach((b, i) => b.classList.toggle('activo', i === indice));
+      paneles.forEach((p, i) => {
+        p.style.display = i === indice ? '' : 'none';
+      });
+    }
 
     botones.forEach((boton) => {
       boton.addEventListener('click', () => {
-        const dia = boton.getAttribute('data-dia');
-
-        botones.forEach((b) => b.classList.remove('activo'));
-        boton.classList.add('activo');
-
-        paneles.forEach((p) => {
-          p.style.display = p.getAttribute('data-panel') === dia ? '' : 'none';
-        });
+        mostrarDia(Number(boton.dataset.index));
       });
+    });
+
+    let xInicio = 0;
+    let yInicio = 0;
+
+    contenedor.addEventListener('touchstart', (e) => {
+      xInicio = e.touches[0].clientX;
+      yInicio = e.touches[0].clientY;
+    }, { passive: true });
+
+    contenedor.addEventListener('touchend', (e) => {
+      const xFin = e.changedTouches[0].clientX;
+      const yFin = e.changedTouches[0].clientY;
+      const deltaX = xFin - xInicio;
+      const deltaY = yFin - yInicio;
+
+      if (Math.abs(deltaX) < 50 || Math.abs(deltaX) < Math.abs(deltaY)) return;
+
+      if (deltaX < 0) {
+        mostrarDia(indiceActual + 1);
+      } else {
+        mostrarDia(indiceActual - 1);
+      }
     });
   </script>
 </body>
