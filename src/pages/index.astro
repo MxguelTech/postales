@@ -1,17 +1,148 @@
 ---
+import { Client } from '@notionhq/client';
 
+const notion = new Client({ auth: import.meta.env.NOTION_TOKEN });
+
+const response = await notion.databases.query({
+  database_id: import.meta.env.NOTION_DATABASE_ID,
+  sorts: [
+    {
+      property: 'Dia',
+      direction: 'ascending',
+    },
+  ],
+});
+
+const dias = response.results.map((page) => ({
+  nombre: page.properties.Nombre.rich_text[0]?.plain_text ?? '',
+  viaje: page.properties.Viaje.rich_text[0]?.plain_text ?? '',
+  dia: page.properties.Dia.number,
+  texto: page.properties.Texto.rich_text[0]?.plain_text ?? '',
+  slug: page.properties.Slug.url ?? '',
+}));
+
+const numFotos = 2;
+
+const diasConFotos = dias.map((d) => {
+  const fotos = Array.from(
+    { length: numFotos },
+    (_, i) => `/fotos/tenerife/dia${d.dia}/${i + 1}.jpg`
+  );
+  return { ...d, fotos };
+});
+
+const nombreViaje = diasConFotos[0]?.viaje ?? '';
 ---
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{nombreViaje}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, sans-serif;
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 24px 16px;
+      background: #fafafa;
+    }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    .subtitulo { font-size: 13px; color: #777; margin: 0 0 24px; }
+    .timeline {
+      display: flex;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+    .punto-wrap {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      background: none;
+      border: none;
+      font-family: inherit;
+    }
+    .punto {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 2px solid #999;
+      background: white;
+    }
+    .punto-wrap.activo .punto {
+      background: #2563eb;
+      border-color: #2563eb;
+    }
+    .etiqueta { font-size: 11px; color: #777; }
+    .punto-wrap.activo .etiqueta { color: #2563eb; font-weight: 600; }
+    .linea { flex: 1; height: 1.5px; background: #ccc; margin-bottom: 20px; }
+    .panel {
+      background: white;
+      border-radius: 12px;
+      border: 1px solid #eee;
+      padding: 16px;
+    }
+    .panel h2 { font-size: 16px; margin: 0 0 6px; }
+    .panel p { font-size: 13px; color: #555; line-height: 1.6; margin: 0 0 12px; }
+    .fotos {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+    .fotos img {
+      width: 100%;
+      aspect-ratio: 1;
+      object-fit: cover;
+      border-radius: 8px;
+      background: #eee;
+    }
+  </style>
+</head>
+<body>
+  <h1>{nombreViaje}</h1>
+  <p class="subtitulo">{diasConFotos.length} dias explorando la zona</p>
 
-<html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<link rel="icon" href="/favicon.ico" />
-		<meta name="viewport" content="width=device-width" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Astro</title>
-	</head>
-	<body>
-		<h1>Astro</h1>
-	</body>
+  <div class="timeline">
+    {diasConFotos.map((d, i) => (
+      <>
+        <button class="punto-wrap" class:list={[{ activo: i === 0 }]} data-dia={d.dia}>
+          <span class="punto"></span>
+          <span class="etiqueta">Dia {d.dia}</span>
+        </button>
+        {i < diasConFotos.length - 1 && <div class="linea"></div>}
+      </>
+    ))}
+  </div>
+
+  {diasConFotos.map((d, i) => (
+    <div class="panel" data-panel={d.dia} style={i === 0 ? '' : 'display:none'}>
+      <h2>{d.nombre}</h2>
+      <p>{d.texto}</p>
+      <div class="fotos">
+        {d.fotos.map((f) => <img src={f} loading="lazy" />)}
+      </div>
+    </div>
+  ))}
+
+  <script>
+    const botones = document.querySelectorAll('.punto-wrap');
+    const paneles = document.querySelectorAll('.panel');
+
+    botones.forEach((boton) => {
+      boton.addEventListener('click', () => {
+        const dia = boton.getAttribute('data-dia');
+
+        botones.forEach((b) => b.classList.remove('activo'));
+        boton.classList.add('activo');
+
+        paneles.forEach((p) => {
+          p.style.display = p.getAttribute('data-panel') === dia ? '' : 'none';
+        });
+      });
+    });
+  </script>
+</body>
 </html>
